@@ -1,0 +1,272 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- CONFIG
+local LOCK_ON_PART = "Head"
+local LERP_SPEED = 0.2
+-- FOV Settings (RED)
+local FOV_RADIUS = 100
+local FOV_COLOR = Color3.new(1, 0, 0)
+local FOV_THICKNESS = 2
+-- RAINBOW ESP Settings
+local ESP_TRANSPARENCY = 0.3
+local RAINBOW_SPEED = 2
+
+-- State Variables
+local isLocked = false
+local targetPlayer = nil
+local menuOpen = false
+local currentHighlight = nil
+local hue = 0
+
+-- UI Elements
+local ScreenGui
+local MainWindow -- The main menu window
+local ToggleButton -- The button to turn aim on/off
+local FOVCircle
+local MinimizeButton -- To hide/show the menu
+
+-- ==============================================
+-- RAYFIELD-STYLE MENU CREATION
+-- ==============================================
+local function createMenu()
+    -- Main Container
+    ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "RayfieldStyleMenu"
+    ScreenGui.Parent = PlayerGui
+
+    -- === RED FOV CIRCLE ===
+    FOVCircle = Instance.new("Frame")
+    FOVCircle.Name = "FOVCircle"
+    FOVCircle.Size = UDim2.new(0, FOV_RADIUS * 2, 0, FOV_RADIUS * 2)
+    FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+    FOVCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
+    FOVCircle.BackgroundTransparency = 1
+    FOVCircle.BorderSizePixel = 0
+    FOVCircle.Parent = ScreenGui
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(1, 0)
+    Corner.Parent = FOVCircle
+
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Thickness = FOV_THICKNESS
+    Stroke.Color = FOV_COLOR
+    Stroke.Parent = FOVCircle
+
+    -- === MAIN MENU WINDOW (Rayfield Design Look) ===
+    MainWindow = Instance.new("Frame")
+    MainWindow.Name = "MainWindow"
+    MainWindow.Size = UDim2.new(0, 450, 0, 300) -- Size similar to Rayfield
+    MainWindow.Position = UDim2.new(0.05, 0, 0.1, 0)
+    MainWindow.BackgroundColor3 = Color3.new(0.12, 0.12, 0.12) -- Dark theme
+    MainWindow.BorderColor3 = Color3.new(1, 0, 0) -- Red accent border
+    MainWindow.BorderSizePixel = 2
+    MainWindow.ClipsDescendants = true
+    MainWindow.Parent = ScreenGui
+
+    -- Window Corner Radius
+    local WindowCorner = Instance.new("UICorner")
+    WindowCorner.CornerRadius = UDim.new(0, 8)
+    WindowCorner.Parent = MainWindow
+
+    -- === HEADER BAR ===
+    local HeaderBar = Instance.new("Frame")
+    HeaderBar.Name = "HeaderBar"
+    HeaderBar.Size = UDim2.new(1, 0, 0, 40)
+    HeaderBar.Position = UDim2.new(0, 0, 0, 0)
+    HeaderBar.BackgroundColor3 = Color3.new(0.18, 0.18, 0.18)
+    HeaderBar.BorderSizePixel = 0
+    HeaderBar.Parent = MainWindow
+
+    -- Title Text
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Name = "Title"
+    TitleLabel.Size = UDim2.new(0.8, 0, 1, 0)
+    TitleLabel.Position = UDim2.new(0.05, 0, 0, 0)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = "Aim Lock"
+    TitleLabel.TextColor3 = Color3.new(1, 1, 1)
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.TextScaled = true
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.Parent = HeaderBar
+
+    -- MINIMIZE BUTTON (Top Right)
+    MinimizeButton = Instance.new("TextButton")
+    MinimizeButton.Name = "MinimizeButton"
+    MinimizeButton.Size = UDim2.new(0, 40, 1, 0)
+    MinimizeButton.Position = UDim2.new(1, -40, 0, 0)
+    MinimizeButton.BackgroundColor3 = Color3.new(1, 0, 0)
+    MinimizeButton.Text = "_"
+    MinimizeButton.TextColor3 = Color3.new(1, 1, 1)
+    MinimizeButton.Font = Enum.Font.GothamBold
+    MinimizeButton.Parent = HeaderBar
+
+    -- === CONTENT AREA ===
+    local ContentArea = Instance.new("Frame")
+    ContentArea.Name = "ContentArea"
+    ContentArea.Size = UDim2.new(1, -20, 1, -60)
+    ContentArea.Position = UDim2.new(0, 10, 0, 50)
+    ContentArea.BackgroundTransparency = 1
+    ContentArea.Parent = MainWindow
+
+    -- === TOGGLE BUTTON ===
+    ToggleButton = Instance.new("TextButton")
+    ToggleButton.Name = "ToggleAim"
+    ToggleButton.Size = UDim2.new(0.9, 0, 0, 50)
+    ToggleButton.Position = UDim2.new(0.05, 0, 0.05, 0)
+    ToggleButton.BackgroundColor3 = Color3.new(0.25, 0.25, 0.25)
+    ToggleButton.BorderColor3 = Color3.new(1, 0, 0)
+    ToggleButton.BorderSizePixel = 1
+    ToggleButton.Text = "Aim Lock: OFF"
+    ToggleButton.TextColor3 = Color3.new(1, 1, 1)
+    ToggleButton.Font = Enum.Font.Gotham
+    ToggleButton.TextScaled = true
+    ToggleButton.Parent = ContentArea
+
+    local ButtonCorner = Instance.new("UICorner")
+    ButtonCorner.CornerRadius = UDim.new(0, 6)
+    ButtonCorner.Parent = ToggleButton
+
+    -- Connect Events
+    MinimizeButton.MouseButton1Click:Connect(toggleMenuVisibility)
+    ToggleButton.MouseButton1Click:Connect(toggleLock)
+end
+
+-- ==============================================
+-- FUNCTIONS
+-- ==============================================
+
+function toggleMenuVisibility()
+    menuOpen = not menuOpen
+    MainWindow.Visible = menuOpen
+end
+
+local function isWithinFOV(targetPart)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+    if not onScreen then return false end
+
+    local pixelPos = Vector2.new(screenPos.X * Camera.ViewportSize.X, screenPos.Y * Camera.ViewportSize.Y)
+    local centerPos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local distance = (pixelPos - centerPos).Magnitude
+
+    return distance < FOV_RADIUS
+end
+
+-- === RAINBOW ESP ===
+local function removeCurrentESP()
+    if currentHighlight then
+        currentHighlight:Destroy()
+        currentHighlight = nil
+    end
+end
+
+local function applyESPToTarget(character)
+    removeCurrentESP()
+
+    local Highlight = Instance.new("Highlight")
+    Highlight.Name = "TargetESP"
+    Highlight.Adornee = character
+    Highlight.FillTransparency = ESP_TRANSPARENCY
+    Highlight.OutlineTransparency = 0
+    Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    Highlight.Parent = character
+
+    currentHighlight = Highlight
+end
+
+local function updateRainbowEffect(deltaTime)
+    if currentHighlight then
+        hue = (hue + deltaTime * RAINBOW_SPEED) % 1
+        local rainbowColor = Color3.fromHSV(hue, 1, 1)
+        currentHighlight.FillColor = rainbowColor
+        currentHighlight.OutlineColor = rainbowColor
+    end
+end
+
+-- === TOGGLE LOGIC ===
+function toggleLock()
+    isLocked = not isLocked
+    if not isLocked then
+        removeCurrentESP()
+        targetPlayer = nil
+        ToggleButton.Text = "Aim Lock: OFF"
+        ToggleButton.BackgroundColor3 = Color3.new(0.25, 0.25, 0.25)
+    else
+        local closestDist = math.huge
+        local myChar = LocalPlayer.Character
+        if not myChar then 
+            isLocked = false
+            return 
+        end
+
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local targetPart = player.Character:FindFirstChild(LOCK_ON_PART)
+                if targetPart and isWithinFOV(targetPart) then
+                    local dist = (myChar.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                    if dist < closestDist then
+                        closestDist = dist
+                        targetPlayer = player
+                    end
+                end
+            end
+        end
+
+        if targetPlayer and targetPlayer.Character then
+            applyESPToTarget(targetPlayer.Character)
+        end
+
+        ToggleButton.Text = "Aim Lock: ON"
+        ToggleButton.BackgroundColor3 = Color3.new(0, 0.8, 0) -- Green when active
+    end
+end
+
+-- === INPUT HANDLING ===
+local function onInputBegan(input, gameProcessed)
+    if gameProcessed then return end
+    
+    -- Keyboard shortcuts still work if needed
+    if input.KeyCode == Enum.KeyCode.M then
+        toggleMenuVisibility()
+    end
+    if input.KeyCode == Enum.KeyCode.F then
+        toggleLock()
+    end
+end
+
+UserInputService.InputBegan:Connect(onInputBegan)
+RunService.RenderStepped:Connect(updateRainbowEffect)
+
+-- === MAIN AIM LOOP ===
+RunService.RenderStepped:Connect(function()
+    if isLocked and targetPlayer and targetPlayer.Character then
+        local targetPart = targetPlayer.Character:FindFirstChild(LOCK_ON_PART)
+        
+        if targetPart and isWithinFOV(targetPart) then
+            if not currentHighlight or currentHighlight.Adornee ~= targetPlayer.Character then
+                applyESPToTarget(targetPlayer.Character)
+            end
+
+            Camera.CFrame = Camera.CFrame:Lerp(
+                CFrame.new(Camera.CFrame.Position, targetPart.Position),
+                LERP_SPEED
+            )
+        else
+            removeCurrentESP()
+        end
+    else
+        removeCurrentESP()
+    end
+end)
+
+-- NO AUTO FIRE: You control shooting.
+createMenu()
